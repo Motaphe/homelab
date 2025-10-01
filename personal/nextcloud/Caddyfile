@@ -1,0 +1,30 @@
+{
+        # global options
+}
+
+# Redirect HTTP -> HTTPS
+http://{$NC_DOMAIN} {
+        redir https://{host}{uri} permanent
+}
+
+# Single HTTPS site for Nextcloud + Collabora (path-proxied)
+https://{$NC_DOMAIN} {
+    tls /var/lib/tailscale/nextcloud.crt /var/lib/tailscale/nextcloud.key
+
+    @collabora path /browser* /loleaflet* /hosting/discovery* /cool* /lool* /cool.html*
+    handle @collabora {
+        header Cache-Control "public, max-age=31536000, immutable"
+        reverse_proxy collabora:9980 {
+            transport http {
+                versions h1
+            }
+            header_up X-Forwarded-Proto "https"
+            header_up Host {host}
+        }
+    }
+
+    reverse_proxy nextcloud-aio-apache:11000 {
+        header_up X-Forwarded-Proto "https"
+        header_up Host {host}
+    }
+}

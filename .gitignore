@@ -1,0 +1,12 @@
+# Sensitive configuration files
+media/gluetun/wireguard/wg0.conf
+**/.env
+**/.env.local
+**/secrets/
+**/wireguard/
+**/certs/
+**/ssl/
+
+# Docker volumes and data
+**/data/
+**/volumes/
