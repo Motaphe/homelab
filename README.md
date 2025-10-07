@@ -23,10 +23,10 @@ docker-compose up -d
 
 ### 2. Nextcloud
 
+**Important:** Follow this guide for proper setup: [Easy setup: Container-less Tailscale as reverse proxy](https://github.com/nextcloud/all-in-one/discussions/6817)
+
 ```bash
 cd personal/nextcloud/
-cp .env.example .env
-# Edit .env with your Tailscale domain and auth key
 docker-compose up -d
 ```
 
