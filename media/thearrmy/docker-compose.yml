@@ -11,14 +11,15 @@ services:
       - FIREWALL=on
       - TZ=${TZ}
       #- VPN_MTU=1380
+      - VPN_PORT_FORWARDING_UP_COMMAND=/gluetun/update-qb-port.sh
     volumes:
-      - /docker/gluetun:/gluetun
+      - /docker/thearrmy/gluetun:/gluetun
     ports:
       - "8080:8080"  # qBittorrent WebUI through VPN
       - "8191:8191"  # FlareSolverr API
-      # If your VPN supports PF, you can expose a BT port:
-      # - "50413:50413"
-      # - "50413:50413/udp"
+      # ProtonVPN forwarded port (check gluetun logs if it changes)
+      - "60122:60122"
+      - "60122:60122/udp"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9999/health"]
@@ -37,12 +38,12 @@ services:
       - TZ=${TZ}
       - WEBUI_PORT=8080
     volumes:
-      - /docker/qbittorrent:/config
+      - /docker/thearrmy/qbittorrent:/config
       - /data:/data
     restart: unless-stopped
-#    depends_on:
-#      gluetun:
-#        condition: service_healthy
+    depends_on:
+      gluetun:
+        condition: service_healthy
 
   flaresolverr:
     image: flaresolverr/flaresolverr:latest
@@ -69,16 +70,18 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - DOCKER_MODS=linuxserver/mods:jellyfin-opencl-intel
+      - LIBVA_DRIVER_NAME=iHD
+      - LIBVA_DRIVERS_PATH=/usr/lib/jellyfin-ffmpeg/lib/dri
       # Optional but nice: expose the URL Jellyseerr/others can use
       # - JELLYFIN_PublishedServerUrl=http://jellyfin:8096
     volumes:
-      - /docker/jellyfin:/config
-      - /data/media:/data/media:ro
-      # Intel iGPU (render node)
-      - /dev/dri/renderD128:/dev/dri/renderD128
-    # Add container to the host's "render" group (gid 992 you granted in LXC)
-    group_add:
-      - "992"
+      - /docker/thearrmy/jellyfin:/config
+      - /data/media:/data/media
+      - /docker/thearrmy/jellyfin/custom-cont-init.d:/custom-cont-init.d:ro
+    # Intel iGPU (render node)
+    devices:
+      - /dev/dri:/dev/dri
     restart: unless-stopped
 
   radarr:
@@ -87,7 +90,7 @@ services:
     ports: ["7878:7878"]
     environment: [ "PUID=${PUID}", "PGID=${PGID}", "TZ=${TZ}" ]
     volumes:
-      - /docker/radarr:/config
+      - /docker/thearrmy/radarr:/config
       - /data:/data
     restart: unless-stopped
 
@@ -97,7 +100,7 @@ services:
     ports: ["8989:8989"]
     environment: [ "PUID=${PUID}", "PGID=${PGID}", "TZ=${TZ}" ]
     volumes:
-      - /docker/sonarr:/config
+      - /docker/thearrmy/sonarr:/config
       - /data:/data
     restart: unless-stopped
 
@@ -107,7 +110,7 @@ services:
     ports: ["6767:6767"]
     environment: [ "PUID=${PUID}", "PGID=${PGID}", "TZ=${TZ}" ]
     volumes:
-      - /docker/bazarr:/config
+      - /docker/thearrmy/bazarr:/config
       - /data:/data
     restart: unless-stopped
 
@@ -117,16 +120,50 @@ services:
     ports: ["9696:9696"]
     environment: [ "PUID=${PUID}", "PGID=${PGID}", "TZ=${TZ}" ]
     volumes:
-      - /docker/prowlarr:/config
+      - /docker/thearrmy/prowlarr:/config
     restart: unless-stopped
 
-  jellyseerr:
-    image: fallenbagel/jellyseerr:latest
-    container_name: jellyseerr
-    ports: ["5055:5055"]
+  seerr:
+    image: ghcr.io/seerr-team/seerr:develop #seerr:preview-music-support for music latest testing branch
+    container_name: seerr
+    init: true
+    ports:
+      - "5055:5055"
     environment:
       - LOG_LEVEL=info
       - TZ=${TZ}
+      - PORT=5055
     volumes:
-      - /docker/jellyseerr:/app/config
+      - /docker/thearrmy/jellyseerr:/app/config
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5055/api/v1/status"]
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
     restart: unless-stopped
+
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    ports:
+      - "8686:8686"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - /docker/thearrmy/lidarr:/config
+      - /data:/data
+    restart: unless-stopped
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    user: "${PUID}:${PGID}" # should be owner of volumes
+    ports:
+      - "4533:4533"
+    restart: unless-stopped
+    volumes:
+      - /docker/thearrmy/navidrome:/data
+      - /data/media/music:/music:ro
