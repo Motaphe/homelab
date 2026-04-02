@@ -8,7 +8,7 @@ This repository contains Docker Compose configurations for various self-hosted s
 ### 1. Media Stack
 
 ```bash
-cd media/
+cd media/thearrmy/
 cp .env.example .env
 # Edit .env with your actual values
 docker-compose up -d
