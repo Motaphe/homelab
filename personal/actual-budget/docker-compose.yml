@@ -1,0 +1,12 @@
+services:
+  actual-server:
+    image: actualbudget/actual-server:latest-alpine
+    container_name: actual-budget
+    restart: unless-stopped
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/actualbudget/actual/releases
+    ports:
+      - "5006:5006"
+    volumes:
+      - ./data:/data

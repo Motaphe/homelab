@@ -10,3 +10,22 @@ media/gluetun/wireguard/wg0.conf
 # Docker volumes and data
 **/data/
 **/volumes/
+
+# App runtime data (databases, caches, logs, media metadata)
+media/thearrmy/autobrr/
+media/thearrmy/bazarr/
+media/thearrmy/cross-seed/
+media/thearrmy/jellyfin/
+media/thearrmy/jellyseerr/
+media/thearrmy/lidarr/
+media/thearrmy/navidrome/
+media/thearrmy/profilarr/
+media/thearrmy/prowlarr/
+media/thearrmy/qbit-manage/
+media/thearrmy/qbittorrent/
+media/thearrmy/radarr/
+media/thearrmy/sonarr/
+media/thearrmy/gluetun/forwarded_port
+media/thearrmy/gluetun/servers.json
+personal/immich-app/postgres/
+personal/vaultwarden/vw-data/

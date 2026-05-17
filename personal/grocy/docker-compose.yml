@@ -1,0 +1,16 @@
+services:
+  grocy:
+    image: ghcr.io/linuxserver/grocy:latest
+    container_name: grocy
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/linuxserver/docker-grocy/pkgs/container/docker-grocy
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    volumes:
+      - ./data:/config
+    ports:
+      - 9283:80
+    restart: unless-stopped

@@ -2,6 +2,9 @@ services:
   gluetun:
     image: qmcgaw/gluetun:latest
     container_name: gluetun
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/qdm12/gluetun/releases
     cap_add: [NET_ADMIN]
     devices: ["/dev/net/tun:/dev/net/tun"]
     env_file: [./.env]
@@ -11,15 +14,16 @@ services:
       - FIREWALL=on
       - TZ=${TZ}
       #- VPN_MTU=1380
-      - VPN_PORT_FORWARDING_UP_COMMAND=/gluetun/update-qb-port.sh
+      - VPN_PORT_FORWARDING_STATUS_FILE=/gluetun/forwarded_port
+      - VPN_PORT_FORWARDING_UP_COMMAND=/gluetun/update-qb-port.sh {{PORT}} {{VPN_INTERFACE}}
+      - VPN_PORT_FORWARDING_DOWN_COMMAND=/gluetun/reset-qb-port.sh {{VPN_INTERFACE}}
+      - HTTPPROXY=on
+      - HTTPPROXY_LOG=off
     volumes:
       - /docker/thearrmy/gluetun:/gluetun
     ports:
       - "8080:8080"  # qBittorrent WebUI through VPN
-      - "8191:8191"  # FlareSolverr API
-      # ProtonVPN forwarded port (check gluetun logs if it changes)
-      - "60122:60122"
-      - "60122:60122/udp"
+      - "8888:8888"  # HTTP proxy for Prowlarr/autobrr
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9999/health"]
@@ -28,8 +32,11 @@ services:
       retries: 6
 
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
+    image: ghcr.io/linuxserver/qbittorrent:latest
     container_name: qbittorrent
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/linuxserver/docker-qbittorrent/pkgs/container/docker-qbittorrent
     network_mode: "service:gluetun"
     env_file: [./.env]
     environment:
@@ -39,31 +46,27 @@ services:
       - WEBUI_PORT=8080
     volumes:
       - /docker/thearrmy/qbittorrent:/config
+      - /docker/thearrmy/qbittorrent-init:/custom-cont-init.d:ro
+      - /docker/thearrmy/qbittorrent-hooks:/hooks:ro
+      - /docker/thearrmy/gluetun:/gluetun:ro
       - /data:/data
     restart: unless-stopped
     depends_on:
       gluetun:
         condition: service_healthy
-
-  flaresolverr:
-    image: flaresolverr/flaresolverr:latest
-    container_name: flaresolverr
-    network_mode: "service:gluetun"
-    env_file: [./.env]
-    environment:
-      - LOG_LEVEL=info
-      - TZ=${TZ}
-      # Optionally set a request timeout (in seconds)
-      - CAPTCHA_SOLVER=none
-      - HEADLESS=true
-    restart: unless-stopped
-    depends_on:
-      gluetun:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080 > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   jellyfin:
-    image: lscr.io/linuxserver/jellyfin:latest
+    image: ghcr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/linuxserver/docker-jellyfin/pkgs/container/docker-jellyfin
     ports:
       - "8096:8096"
     environment:
@@ -73,59 +76,104 @@ services:
       - DOCKER_MODS=linuxserver/mods:jellyfin-opencl-intel
       - LIBVA_DRIVER_NAME=iHD
       - LIBVA_DRIVERS_PATH=/usr/lib/jellyfin-ffmpeg/lib/dri
-      # Optional but nice: expose the URL Jellyseerr/others can use
-      # - JELLYFIN_PublishedServerUrl=http://jellyfin:8096
+      - JELLYFIN_PublishedServerUrl=https://jellyfin.motaphe.dev
     volumes:
       - /docker/thearrmy/jellyfin:/config
+      - /docker/thearrmy/jellyfin/transcodes:/config/cache/transcodes
       - /data/media:/data/media
       - /docker/thearrmy/jellyfin/custom-cont-init.d:/custom-cont-init.d:ro
     # Intel iGPU (render node)
     devices:
       - /dev/dri:/dev/dri
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8096/health > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   radarr:
-    image: lscr.io/linuxserver/radarr:latest
+    image: ghcr.io/linuxserver/radarr:latest
     container_name: radarr
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/linuxserver/docker-radarr/pkgs/container/docker-radarr
     ports: ["7878:7878"]
     environment: [ "PUID=${PUID}", "PGID=${PGID}", "TZ=${TZ}" ]
     volumes:
       - /docker/thearrmy/radarr:/config
       - /data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7878/ping > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   sonarr:
-    image: lscr.io/linuxserver/sonarr:latest
+    image: ghcr.io/linuxserver/sonarr:latest
     container_name: sonarr
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/linuxserver/docker-sonarr/pkgs/container/docker-sonarr
     ports: ["8989:8989"]
     environment: [ "PUID=${PUID}", "PGID=${PGID}", "TZ=${TZ}" ]
     volumes:
       - /docker/thearrmy/sonarr:/config
       - /data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8989/ping > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   bazarr:
-    image: lscr.io/linuxserver/bazarr:latest
+    image: ghcr.io/linuxserver/bazarr:latest
     container_name: bazarr
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/linuxserver/docker-bazarr/pkgs/container/docker-bazarr
     ports: ["6767:6767"]
     environment: [ "PUID=${PUID}", "PGID=${PGID}", "TZ=${TZ}" ]
     volumes:
       - /docker/thearrmy/bazarr:/config
       - /data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:6767 > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:latest
+    image: ghcr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/linuxserver/docker-prowlarr/pkgs/container/docker-prowlarr
     ports: ["9696:9696"]
     environment: [ "PUID=${PUID}", "PGID=${PGID}", "TZ=${TZ}" ]
     volumes:
       - /docker/thearrmy/prowlarr:/config
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9696/ping > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   seerr:
-    image: ghcr.io/seerr-team/seerr:develop #seerr:preview-music-support for music latest testing branch
+    image: ghcr.io/seerr-team/seerr:latest
     container_name: seerr
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/seerr-team/seerr/releases
     init: true
     ports:
       - "5055:5055"
@@ -144,8 +192,11 @@ services:
     restart: unless-stopped
 
   lidarr:
-    image: lscr.io/linuxserver/lidarr:latest
+    image: ghcr.io/linuxserver/lidarr:latest
     container_name: lidarr
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/linuxserver/docker-lidarr/pkgs/container/docker-lidarr
     ports:
       - "8686:8686"
     environment:
@@ -156,10 +207,19 @@ services:
       - /docker/thearrmy/lidarr:/config
       - /data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8686/ping > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   navidrome:
     image: deluan/navidrome:latest
     container_name: navidrome
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/navidrome/navidrome/releases
     user: "${PUID}:${PGID}" # should be owner of volumes
     ports:
       - "4533:4533"
@@ -167,3 +227,116 @@ services:
     volumes:
       - /docker/thearrmy/navidrome:/data
       - /data/media/music:/music:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4533/ping > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  cross-seed:
+    image: ghcr.io/cross-seed/cross-seed:6-amd64
+    container_name: cross-seed
+    labels:
+      - wud.tag.include=^6-amd64$
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/cross-seed/cross-seed/releases
+    user: "${PUID}:${PGID}"
+    command: daemon
+    expose:
+      - "2468"
+    environment:
+      - TZ=${TZ}
+      - CROSS_SEED_API_KEY=${CROSS_SEED_API_KEY}
+      - PROWLARR_API_KEY=${PROWLARR_API_KEY}
+      - SONARR_API_KEY=${SONARR_API_KEY}
+      - RADARR_API_KEY=${RADARR_API_KEY}
+      - QBIT_USER=${QBIT_USER}
+      - QBIT_PASS=${QBIT_PASS}
+    volumes:
+      - /docker/thearrmy/cross-seed:/config
+      - /data:/data
+      - /docker/thearrmy/qbittorrent/qBittorrent/BT_backup:/torrents:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --server-response --spider http://127.0.0.1:2468 2>&1 | grep -q 'HTTP/' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  autobrr:
+    image: ghcr.io/autobrr/autobrr:latest
+    container_name: autobrr
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/autobrr/autobrr/releases
+    user: "${PUID}:${PGID}"
+    ports:
+      - "7474:7474"
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - /docker/thearrmy/autobrr:/config
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7474/api/healthz/liveness > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  qbit-manage:
+    image: ghcr.io/stuffanthings/qbit_manage:latest
+    container_name: qbit-manage
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/StuffAnThings/qbit_manage/releases
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - QBIT_USER=${QBIT_USER}
+      - QBIT_PASS=${QBIT_PASS}
+      - QBT_CONFIG=/config/config.yml
+      - QBT_LOGFILE=/config/logs/activity.log
+    command: >-
+      python3 qbit_manage.py
+      --schedule 60
+      --cat-update
+      --tag-update
+      --rem-unregistered
+      --tag-tracker-error
+      --tag-nohardlinks
+      --share-limits
+    volumes:
+      - /docker/thearrmy/qbit-manage:/config
+      - /docker/thearrmy/qbittorrent:/qbittorrent
+      - /data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "grep -rl qbit_manage /proc/*/cmdline 2>/dev/null | grep -q . || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  profilarr:
+    image: santiagosayshey/profilarr:latest
+    container_name: profilarr
+    labels:
+      - wud.watch.digest=true
+      - wud.link.template=https://github.com/Dictionarry-Hub/profilarr/releases
+    ports:
+      - "6868:6868"
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - /docker/thearrmy/profilarr:/config
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:6868 > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
